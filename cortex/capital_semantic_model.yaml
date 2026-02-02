@@ -1,0 +1,630 @@
+# =============================================================================
+# Cortex Analyst Semantic Model
+# ATLAS Capital Delivery Intelligence Platform
+# =============================================================================
+
+name: capital_delivery_model
+description: >
+  Semantic model for capital project delivery analytics. Enables natural language
+  queries about project performance, change orders, schedule risk, and cost variance.
+  Supports the "Hidden Discovery" pattern detection in change order analysis.
+
+tables:
+  # ============================================
+  # PROJECT - Master project data
+  # ============================================
+  - name: projects
+    description: Capital projects in the portfolio with budget and performance metrics.
+    base_table:
+      database: CAPITAL_PROJECTS_DB
+      schema: ATOMIC
+      table: PROJECT
+    primary_key:
+      columns: [project_id]
+
+    dimensions:
+      - name: project_id
+        description: Unique project identifier.
+        expr: project_id
+        data_type: TEXT
+
+      - name: project_name
+        synonyms: ["project", "site", "location"]
+        description: Full project name.
+        expr: project_name
+        data_type: TEXT
+        sample_values: ["Downtown Transit Hub", "Airport Terminal Expansion", "Metro Blue Line Extension"]
+
+      - name: project_type
+        synonyms: ["type", "category"]
+        description: Type of infrastructure project.
+        expr: project_type
+        data_type: TEXT
+        sample_values: ["TRANSIT", "HIGHWAY", "UTILITY", "FACILITY"]
+
+      - name: status
+        description: Current project status.
+        expr: status
+        data_type: TEXT
+        sample_values: ["ACTIVE", "ON_HOLD", "COMPLETE"]
+
+      - name: city
+        synonyms: ["location"]
+        description: City where project is located.
+        expr: city
+        data_type: TEXT
+
+      - name: state
+        description: State where project is located.
+        expr: state
+        data_type: TEXT
+
+      - name: prime_contractor
+        synonyms: ["contractor", "builder"]
+        description: Prime contractor company.
+        expr: prime_contractor
+        data_type: TEXT
+
+    time_dimensions:
+      - name: planned_start_date
+        synonyms: ["start date"]
+        description: Planned project start date.
+        expr: planned_start_date
+        data_type: DATE
+
+      - name: planned_end_date
+        synonyms: ["end date", "completion date"]
+        description: Planned project completion date.
+        expr: planned_end_date
+        data_type: DATE
+
+    facts:
+      - name: original_budget
+        synonyms: ["budget", "baseline budget"]
+        description: Original approved budget in dollars.
+        expr: original_budget
+        data_type: NUMBER
+
+      - name: current_budget
+        description: Current budget including approved changes.
+        expr: current_budget
+        data_type: NUMBER
+
+      - name: contingency_budget
+        synonyms: ["contingency"]
+        description: Total contingency fund allocation.
+        expr: contingency_budget
+        data_type: NUMBER
+
+      - name: contingency_used
+        description: Amount of contingency used to date.
+        expr: contingency_used
+        data_type: NUMBER
+
+      - name: cpi
+        synonyms: ["cost performance index", "cost performance"]
+        description: Cost Performance Index (EV/AC). Below 1.0 indicates over budget.
+        expr: cpi
+        data_type: NUMBER
+
+      - name: spi
+        synonyms: ["schedule performance index", "schedule performance"]
+        description: Schedule Performance Index (EV/PV). Below 1.0 indicates behind schedule.
+        expr: spi
+        data_type: NUMBER
+
+      - name: latitude
+        description: Project latitude for mapping.
+        expr: latitude
+        data_type: NUMBER
+
+      - name: longitude
+        description: Project longitude for mapping.
+        expr: longitude
+        data_type: NUMBER
+
+    metrics:
+      - name: project_count
+        synonyms: ["number of projects", "total projects"]
+        description: Count of projects.
+        expr: COUNT(DISTINCT projects.project_id)
+
+      - name: total_budget
+        synonyms: ["portfolio budget", "total value"]
+        description: Sum of all project budgets.
+        expr: SUM(projects.original_budget)
+
+      - name: average_cpi
+        synonyms: ["avg CPI"]
+        description: Average Cost Performance Index across projects.
+        expr: AVG(projects.cpi)
+
+      - name: average_spi
+        synonyms: ["avg SPI"]
+        description: Average Schedule Performance Index across projects.
+        expr: AVG(projects.spi)
+
+      - name: projects_over_budget
+        description: Count of projects with CPI below 0.95.
+        expr: SUM(CASE WHEN projects.cpi < 0.95 THEN 1 ELSE 0 END)
+
+      - name: projects_behind_schedule
+        description: Count of projects with SPI below 0.95.
+        expr: SUM(CASE WHEN projects.spi < 0.95 THEN 1 ELSE 0 END)
+
+  # ============================================
+  # VENDOR - Contractor/Subcontractor data
+  # ============================================
+  - name: vendors
+    description: Contractors and subcontractors with performance metrics and risk scores.
+    base_table:
+      database: CAPITAL_PROJECTS_DB
+      schema: ATOMIC
+      table: VENDOR
+    primary_key:
+      columns: [vendor_id]
+
+    dimensions:
+      - name: vendor_id
+        description: Unique vendor identifier.
+        expr: vendor_id
+        data_type: TEXT
+
+      - name: vendor_name
+        synonyms: ["contractor", "subcontractor", "company"]
+        description: Vendor company name.
+        expr: vendor_name
+        data_type: TEXT
+        sample_values: ["Apex Electrical Services", "Delta Mechanical", "Granite Civil Contractors"]
+
+      - name: trade_category
+        synonyms: ["trade", "specialty"]
+        description: Trade category or specialty.
+        expr: trade_category
+        data_type: TEXT
+        sample_values: ["ELECTRICAL", "MECHANICAL", "CIVIL", "STRUCTURAL", "PLUMBING"]
+
+      - name: vendor_type
+        description: Type of vendor relationship.
+        expr: vendor_type
+        data_type: TEXT
+        sample_values: ["SUBCONTRACTOR", "SUPPLIER", "PRIME"]
+
+    facts:
+      - name: avg_co_rate
+        synonyms: ["change order rate"]
+        description: Average change orders per $100K contracted.
+        expr: avg_co_rate
+        data_type: NUMBER
+
+      - name: ontime_delivery_rate
+        synonyms: ["on-time rate", "delivery performance"]
+        description: Percentage of milestones delivered on time.
+        expr: ontime_delivery_rate
+        data_type: NUMBER
+
+      - name: quality_score
+        description: Quality performance score (0-100).
+        expr: quality_score
+        data_type: NUMBER
+
+      - name: risk_score
+        synonyms: ["vendor risk"]
+        description: ML-calculated risk score (0-100, higher = more risk).
+        expr: risk_score
+        data_type: NUMBER
+
+    metrics:
+      - name: vendor_count
+        description: Count of vendors.
+        expr: COUNT(DISTINCT vendors.vendor_id)
+
+      - name: high_risk_vendors
+        description: Count of vendors with risk score above 60.
+        expr: SUM(CASE WHEN vendors.risk_score > 60 THEN 1 ELSE 0 END)
+
+  # ============================================
+  # CHANGE_ORDER - Change orders with ML classification
+  # ============================================
+  - name: change_orders
+    description: Change orders with ML-based classification. Key for detecting scope leakage patterns.
+    base_table:
+      database: CAPITAL_PROJECTS_DB
+      schema: ATOMIC
+      table: CHANGE_ORDER
+    primary_key:
+      columns: [co_id]
+
+    dimensions:
+      - name: co_id
+        description: Unique change order identifier.
+        expr: co_id
+        data_type: TEXT
+
+      - name: project_id
+        description: Associated project.
+        expr: project_id
+        data_type: TEXT
+
+      - name: vendor_id
+        description: Vendor who submitted the change order.
+        expr: vendor_id
+        data_type: TEXT
+
+      - name: co_number
+        synonyms: ["CO number"]
+        description: Change order reference number.
+        expr: co_number
+        data_type: TEXT
+
+      - name: co_title
+        synonyms: ["title", "description"]
+        description: Change order title/description.
+        expr: co_title
+        data_type: TEXT
+
+      - name: co_type
+        synonyms: ["type", "category"]
+        description: Type of change.
+        expr: co_type
+        data_type: TEXT
+        sample_values: ["SCOPE_CHANGE", "DESIGN_ERROR", "FIELD_CONDITION", "OWNER_REQUEST"]
+
+      - name: status
+        description: Approval status.
+        expr: status
+        data_type: TEXT
+        sample_values: ["APPROVED", "SUBMITTED", "DRAFT", "REJECTED"]
+
+      - name: approval_level
+        description: Approval authority level.
+        expr: approval_level
+        data_type: TEXT
+        sample_values: ["AUTO", "PM", "DIRECTOR", "EXECUTIVE"]
+
+      - name: reason_text
+        synonyms: ["reason", "justification"]
+        description: Free text reason for the change.
+        expr: reason_text
+        data_type: TEXT
+
+      - name: ml_category
+        synonyms: ["AI category", "predicted category"]
+        description: ML-predicted change category.
+        expr: ml_category
+        data_type: TEXT
+        sample_values: ["SCOPE_GAP", "DESIGN_ERROR", "FIELD_CONDITION"]
+
+    time_dimensions:
+      - name: submit_date
+        synonyms: ["submitted"]
+        description: Date change order was submitted.
+        expr: submit_date
+        data_type: DATE
+
+      - name: approval_date
+        synonyms: ["approved"]
+        description: Date change order was approved.
+        expr: approval_date
+        data_type: DATE
+
+    facts:
+      - name: approved_amount
+        synonyms: ["amount", "value", "cost"]
+        description: Approved change order amount in dollars.
+        expr: approved_amount
+        data_type: NUMBER
+
+      - name: ml_confidence
+        description: ML model confidence in classification (0-1).
+        expr: ml_confidence
+        data_type: NUMBER
+
+      - name: ml_scope_gap_prob
+        description: Probability this is a scope gap issue.
+        expr: ml_scope_gap_prob
+        data_type: NUMBER
+
+    metrics:
+      - name: co_count
+        synonyms: ["number of change orders", "total COs"]
+        description: Count of change orders.
+        expr: COUNT(change_orders.co_id)
+
+      - name: co_total_amount
+        synonyms: ["total CO value", "CO spend"]
+        description: Total approved change order amount.
+        expr: SUM(change_orders.approved_amount)
+
+      - name: average_co_amount
+        description: Average change order amount.
+        expr: AVG(change_orders.approved_amount)
+
+      - name: scope_gap_count
+        description: Count of COs classified as scope gaps.
+        expr: SUM(CASE WHEN change_orders.ml_category = 'SCOPE_GAP' THEN 1 ELSE 0 END)
+
+      - name: scope_gap_amount
+        description: Total amount of scope gap COs.
+        expr: SUM(CASE WHEN change_orders.ml_category = 'SCOPE_GAP' THEN change_orders.approved_amount ELSE 0 END)
+
+      - name: auto_approved_count
+        description: Count of auto-approved small COs.
+        expr: SUM(CASE WHEN change_orders.approval_level = 'AUTO' THEN 1 ELSE 0 END)
+
+      - name: small_co_count
+        description: Count of COs under $5,000.
+        expr: SUM(CASE WHEN change_orders.approved_amount < 5000 THEN 1 ELSE 0 END)
+
+  # ============================================
+  # PROJECT_ACTIVITY - Schedule data
+  # ============================================
+  - name: activities
+    description: Schedule activities with progress tracking and risk predictions.
+    base_table:
+      database: CAPITAL_PROJECTS_DB
+      schema: ATOMIC
+      table: PROJECT_ACTIVITY
+    primary_key:
+      columns: [activity_id]
+
+    dimensions:
+      - name: activity_id
+        description: Unique activity identifier.
+        expr: activity_id
+        data_type: TEXT
+
+      - name: project_id
+        description: Associated project.
+        expr: project_id
+        data_type: TEXT
+
+      - name: activity_name
+        synonyms: ["task", "activity"]
+        description: Activity name/description.
+        expr: activity_name
+        data_type: TEXT
+
+      - name: phase
+        description: Project phase.
+        expr: phase
+        data_type: TEXT
+        sample_values: ["DESIGN", "PROCUREMENT", "CONSTRUCTION", "COMMISSIONING"]
+
+      - name: discipline
+        description: Engineering discipline.
+        expr: discipline
+        data_type: TEXT
+        sample_values: ["CIVIL", "STRUCTURAL", "ELECTRICAL", "MECHANICAL"]
+
+      - name: is_critical
+        synonyms: ["critical path", "critical"]
+        description: Whether activity is on critical path.
+        expr: is_critical
+        data_type: BOOLEAN
+
+    time_dimensions:
+      - name: planned_start
+        description: Planned start date.
+        expr: planned_start
+        data_type: DATE
+
+      - name: planned_finish
+        description: Planned finish date.
+        expr: planned_finish
+        data_type: DATE
+
+      - name: forecast_finish
+        description: Forecasted finish date.
+        expr: forecast_finish
+        data_type: DATE
+
+    facts:
+      - name: percent_complete
+        synonyms: ["progress", "completion"]
+        description: Percentage complete (0-100).
+        expr: percent_complete
+        data_type: NUMBER
+
+      - name: total_float
+        synonyms: ["float", "slack"]
+        description: Total float in days.
+        expr: total_float
+        data_type: NUMBER
+
+      - name: slip_probability
+        synonyms: ["slip risk", "delay risk"]
+        description: ML-predicted probability of schedule slip (0-1).
+        expr: slip_probability
+        data_type: NUMBER
+
+      - name: predicted_slip_days
+        description: Predicted days of schedule slip.
+        expr: predicted_slip_days
+        data_type: NUMBER
+
+    metrics:
+      - name: activity_count
+        description: Count of activities.
+        expr: COUNT(activities.activity_id)
+
+      - name: critical_activity_count
+        description: Count of critical path activities.
+        expr: SUM(CASE WHEN activities.is_critical THEN 1 ELSE 0 END)
+
+      - name: high_risk_activities
+        description: Count of activities with slip probability above 0.5.
+        expr: SUM(CASE WHEN activities.slip_probability > 0.5 THEN 1 ELSE 0 END)
+
+      - name: average_completion
+        description: Average percent complete across activities.
+        expr: AVG(activities.percent_complete)
+
+# ============================================
+# RELATIONSHIPS
+# ============================================
+relationships:
+  - name: projects_to_change_orders
+    left_table: projects
+    right_table: change_orders
+    relationship_columns:
+      - left_column: project_id
+        right_column: project_id
+
+  - name: vendors_to_change_orders
+    left_table: vendors
+    right_table: change_orders
+    relationship_columns:
+      - left_column: vendor_id
+        right_column: vendor_id
+
+  - name: projects_to_activities
+    left_table: projects
+    right_table: activities
+    relationship_columns:
+      - left_column: project_id
+        right_column: project_id
+
+# ============================================
+# VERIFIED QUERIES
+# ============================================
+verified_queries:
+  - name: portfolio_summary
+    question: "What is the total portfolio budget?"
+    use_as_onboarding_question: true
+    sql: |
+      SELECT 
+        COUNT(DISTINCT project_id) as project_count,
+        ROUND(SUM(original_budget) / 1000000000, 2) as total_budget_billions,
+        ROUND(AVG(cpi), 3) as avg_cpi,
+        ROUND(AVG(spi), 3) as avg_spi
+      FROM __projects
+
+  - name: projects_at_risk
+    question: "Which projects are over budget or behind schedule?"
+    use_as_onboarding_question: true
+    sql: |
+      SELECT 
+        project_name,
+        project_type,
+        ROUND(original_budget / 1000000, 1) as budget_millions,
+        cpi,
+        spi,
+        CASE 
+          WHEN cpi < 0.95 AND spi < 0.95 THEN 'CRITICAL'
+          WHEN cpi < 0.95 OR spi < 0.95 THEN 'AT RISK'
+          ELSE 'ON TRACK'
+        END as status
+      FROM __projects
+      WHERE cpi < 1.0 OR spi < 1.0
+      ORDER BY cpi ASC
+
+  - name: change_order_by_vendor
+    question: "Which vendors have the most change orders?"
+    use_as_onboarding_question: true
+    sql: |
+      SELECT 
+        v.vendor_name,
+        v.trade_category,
+        COUNT(co.co_id) as co_count,
+        ROUND(SUM(co.approved_amount), 0) as total_amount,
+        v.risk_score
+      FROM __vendors v
+      JOIN __change_orders co ON v.vendor_id = co.vendor_id
+      WHERE co.status = 'APPROVED'
+      GROUP BY v.vendor_name, v.trade_category, v.risk_score
+      ORDER BY total_amount DESC
+
+  - name: scope_gap_analysis
+    question: "Show me change orders classified as scope gaps"
+    sql: |
+      SELECT 
+        co.co_number,
+        p.project_name,
+        v.vendor_name,
+        co.reason_text,
+        co.approved_amount,
+        co.ml_confidence
+      FROM __change_orders co
+      JOIN __projects p ON co.project_id = p.project_id
+      LEFT JOIN __vendors v ON co.vendor_id = v.vendor_id
+      WHERE co.ml_category = 'SCOPE_GAP'
+      ORDER BY co.approved_amount DESC
+
+  - name: small_auto_approved_cos
+    question: "Show me small auto-approved change orders"
+    sql: |
+      SELECT 
+        co.co_number,
+        p.project_name,
+        v.vendor_name,
+        co.reason_text,
+        co.approved_amount,
+        co.approval_date
+      FROM __change_orders co
+      JOIN __projects p ON co.project_id = p.project_id
+      LEFT JOIN __vendors v ON co.vendor_id = v.vendor_id
+      WHERE co.approval_level = 'AUTO'
+        AND co.approved_amount < 5000
+      ORDER BY co.approval_date DESC
+
+  - name: grounding_pattern
+    question: "Show me change orders related to grounding"
+    sql: |
+      SELECT 
+        co.co_number,
+        p.project_name,
+        v.vendor_name,
+        co.reason_text,
+        co.approved_amount,
+        co.ml_category
+      FROM __change_orders co
+      JOIN __projects p ON co.project_id = p.project_id
+      LEFT JOIN __vendors v ON co.vendor_id = v.vendor_id
+      WHERE LOWER(co.reason_text) LIKE '%ground%'
+      ORDER BY p.project_name
+
+  - name: critical_activities
+    question: "What activities are on the critical path?"
+    sql: |
+      SELECT 
+        a.activity_name,
+        p.project_name,
+        a.phase,
+        a.planned_finish,
+        a.percent_complete,
+        a.slip_probability,
+        a.total_float
+      FROM __activities a
+      JOIN __projects p ON a.project_id = p.project_id
+      WHERE a.is_critical = TRUE
+        AND a.percent_complete < 100
+      ORDER BY a.slip_probability DESC
+
+# ============================================
+# CUSTOM INSTRUCTIONS
+# ============================================
+custom_instructions: >
+  This semantic model covers capital project portfolio management for infrastructure mega-projects.
+  
+  Key business context:
+  - Portfolio includes 12 major infrastructure projects totaling ~$2.3B
+  - Projects include transit hubs, highways, utilities, and facilities
+  - CPI (Cost Performance Index) below 1.0 indicates over budget
+  - SPI (Schedule Performance Index) below 1.0 indicates behind schedule
+  
+  Change Order Classification:
+  - SCOPE_GAP: Missing scope in original design/bid
+  - DESIGN_ERROR: Mistakes in drawings or specifications
+  - FIELD_CONDITION: Unforeseen site conditions
+  - OWNER_REQUEST: Client-requested changes
+  
+  Important insight - "Hidden Discovery" pattern:
+  - Many small change orders (<$5k) from Apex Electrical related to grounding
+  - These are auto-approved individually but aggregate to significant overrun
+  - Look for patterns in reason_text containing "ground" keywords
+  
+  When analyzing change orders:
+  - Pay attention to approval_level = 'AUTO' for small COs that slip under the radar
+  - The ml_category field shows AI classification of the change type
+  - Scope gaps are the most actionable - they indicate systemic design issues

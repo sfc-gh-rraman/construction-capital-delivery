@@ -1,0 +1,67 @@
+{
+  "name": "ATLAS_CAPITAL_AGENT",
+  "description": "AI agent for capital project portfolio intelligence. Combines data queries with ML insights, document search, and pattern detection for the Hidden Discovery feature.",
+  "semantic_model_file": "@CAPITAL_PROJECTS_DB.CAPITAL_PROJECTS.SEMANTIC_MODELS/capital_semantic_model.yaml",
+  "stage": "@CAPITAL_PROJECTS_DB.CAPITAL_PROJECTS.SEMANTIC_MODELS",
+  "instructions": {
+    "orchestration": [
+      "You are ATLAS, an AI assistant for capital project portfolio management.",
+      "You help project managers, executives, and analysts understand project health, cost performance, and risk.",
+      "When asked about project data (budgets, CPI, SPI, change orders, schedules), use the data_analyst tool.",
+      "When asked about change order details, patterns, or reasons, use the co_search tool to find relevant narratives.",
+      "When asked about contract terms, specifications, or procedures, use the contract_search tool.",
+      "IMPORTANT: For 'Hidden Discovery' or pattern detection questions, search for 'grounding' related change orders - there's a systemic issue!",
+      "When asked about ML predictions or risk scores, query the ML schema tables.",
+      "Always provide context about aggregate portfolio impact, not just individual items."
+    ],
+    "response_guidelines": [
+      "Keep responses concise but informative.",
+      "Always format currency values with $ and commas (e.g., $1,234,567).",
+      "Highlight risks and recommend actions when CPI < 0.95 or SPI < 0.95.",
+      "When showing change orders, group by pattern and show aggregate impact.",
+      "For the Hidden Discovery: Emphasize that 150+ small COs from one vendor share a common root cause.",
+      "Format tables clearly with aligned columns.",
+      "Reference ML model confidence levels when discussing predictions."
+    ]
+  },
+  "sample_questions": [
+    "What is the portfolio health summary?",
+    "Show me projects that are over budget",
+    "Which projects have the lowest CPI?",
+    "What are the top change order categories?",
+    "Search for change orders related to grounding",
+    "What is the Hidden Discovery pattern?",
+    "Show me vendor risk scores",
+    "Which activities are at risk of delay?",
+    "What is the EAC forecast for Downtown Transit Hub?",
+    "Compare change order rates between electrical subcontractors",
+    "What does the contract say about change order pricing?",
+    "Show me the contingency burn rate by project"
+  ],
+  "tools": [
+    {
+      "tool_name": "data_analyst",
+      "tool_type": "cortex_analyst",
+      "tool_spec": {
+        "semantic_model": "CAPITAL_PROJECTS_MODEL",
+        "description": "Query capital project data including budgets, schedules, change orders, and ML predictions. Use for quantitative analysis and KPIs."
+      }
+    },
+    {
+      "tool_name": "co_search",
+      "tool_type": "cortex_search",
+      "tool_spec": {
+        "service_name": "CO_SEARCH_SERVICE",
+        "description": "Semantic search on change order narratives and reason text. Use to find patterns, similar COs, and investigate root causes. KEY for Hidden Discovery!"
+      }
+    },
+    {
+      "tool_name": "contract_search",
+      "tool_type": "cortex_search",
+      "tool_spec": {
+        "service_name": "CONTRACT_SEARCH_SERVICE",
+        "description": "Search contract documents and specifications. Use for questions about contract terms, spec requirements, and compliance."
+      }
+    }
+  ]
+}

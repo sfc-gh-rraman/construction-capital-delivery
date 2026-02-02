@@ -1,0 +1,33 @@
+# ATLAS Capital Delivery - SPCS Service Specification
+# This file defines the container service configuration
+
+spec:
+  containers:
+    - name: atlas
+      image: /CAPITAL_PROJECTS_DB/SPCS/ATLAS_IMAGES/atlas:latest
+      env:
+        SNOWFLAKE_DATABASE: CAPITAL_PROJECTS_DB
+        SNOWFLAKE_SCHEMA: ATOMIC
+        LOG_LEVEL: INFO
+      resources:
+        requests:
+          memory: 2Gi
+          cpu: 1
+        limits:
+          memory: 4Gi
+          cpu: 2
+      readinessProbe:
+        port: 8080
+        path: /health
+      volumeMounts:
+        - name: token-vol
+          mountPath: /snowflake/session
+  endpoints:
+    - name: atlas-endpoint
+      port: 8080
+      public: true
+  volumes:
+    - name: token-vol
+      source: "@CAPITAL_PROJECTS_DB.SPCS.ATLAS_STAGE/token"
+      uid: 0
+      gid: 0
