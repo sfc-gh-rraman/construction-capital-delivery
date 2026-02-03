@@ -20,7 +20,7 @@ export interface NavigationContext {
 }
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<Page>('mission')
+  const [currentPage, setCurrentPage] = useState<Page>('landing')
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
 
   const navContext: NavigationContext = {

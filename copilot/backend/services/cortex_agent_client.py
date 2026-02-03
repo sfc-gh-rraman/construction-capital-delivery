@@ -175,10 +175,12 @@ class CortexAgentClient:
         """
         Parse an SSE event string from Cortex Agent API.
         
-        Cortex Agent SSE format includes events like:
-        - content_block_delta with delta.type="text_delta" and delta.text="..."
-        - message_start, message_delta, message_stop
-        - thinking steps
+        Event types from Cortex Agent:
+        - response.output_text.delta - ACTUAL OUTPUT TEXT (display to user)
+        - response.thinking.delta - Agent's internal reasoning (show in thinking panel)
+        - response.status - Status updates (planning, reasoning, etc.)
+        - response.tool_result - Tool execution results (SQL, search)
+        - response.tool_result.status - Tool execution status
         """
         try:
             lines = event_str.strip().split("\n")
@@ -200,94 +202,132 @@ class CortexAgentClient:
             if data is None:
                 return None
             
-            # Log raw event for debugging
-            logger.debug(f"SSE event_type={event_type}, data_keys={data.keys() if isinstance(data, dict) else 'not_dict'}")
-            
-            result = {"type": event_type or "message"}
+            # Log raw event for debugging - INFO level to capture all events
+            logger.info(f"SSE: type={event_type}")
             
             if not isinstance(data, dict):
-                result["content"] = str(data)
-                return result
+                return {"type": "text", "content": str(data)}
             
-            # Handle Cortex Agent response format
-            # The response has a "delta" field with content
-            if "delta" in data:
-                delta = data["delta"]
+            # ============================================================
+            # CRITICAL: Only response.output_text.delta is user-visible text
+            # ============================================================
+            
+            if event_type == "response.output_text.delta" or event_type == "response.text.delta":
+                # This is the ACTUAL response text to show the user
+                text = data.get("text", "")
+                if text:
+                    return {"type": "text", "content": text}
+                return None
+            
+            elif event_type == "response.thinking.delta":
+                # Agent's internal reasoning - goes to thinking panel, NOT main content
+                text = data.get("text", "")
+                if text:
+                    return {
+                        "type": "thinking",
+                        "title": "Reasoning",
+                        "content": text
+                    }
+                return None
+            
+            elif event_type == "response.status":
+                # Status updates - show as thinking steps
+                status = data.get("status", "")
+                message = data.get("message", "")
                 
-                # Text content - could be in delta.text or delta.content[].text
-                if "text" in delta:
-                    result["type"] = "text"
-                    result["content"] = delta["text"]
-                elif "content" in delta:
-                    # Content is an array of content blocks
-                    content_blocks = delta["content"]
-                    if isinstance(content_blocks, list):
-                        text_parts = []
-                        for block in content_blocks:
-                            if isinstance(block, dict) and "text" in block:
-                                text_parts.append(block["text"])
-                            elif isinstance(block, str):
-                                text_parts.append(block)
-                        if text_parts:
-                            result["type"] = "text"
-                            result["content"] = "".join(text_parts)
-                    elif isinstance(content_blocks, str):
-                        result["type"] = "text"
-                        result["content"] = content_blocks
+                status_titles = {
+                    "planning": "Planning analysis approach",
+                    "reasoning_agent_start": "Starting analysis",
+                    "reasoning_agent_stop": "Analysis complete",
+                    "reevaluating_plan": "Refining approach",
+                    "streaming_analyst_results": "Running SQL query",
+                }
                 
-                # Thinking/planning steps
-                if "thinking" in delta:
-                    result["type"] = "thinking"
-                    thinking = delta["thinking"]
-                    if isinstance(thinking, dict):
-                        result["title"] = thinking.get("title", "Processing")
-                        result["content"] = thinking.get("content", "")
-                    else:
-                        result["title"] = "Processing"
-                        result["content"] = str(thinking)
+                title = status_titles.get(status, message or status)
+                if title:
+                    return {
+                        "type": "status",
+                        "title": title,
+                        "status": status
+                    }
+                return None
+            
+            elif event_type == "response.tool_result.status":
+                # Tool execution status
+                status = data.get("status", "")
+                message = data.get("message", "")
                 
-                # Tool use (SQL execution)
-                if "tool_use" in delta:
-                    result["type"] = "tool_use"
-                    result["tool_use"] = delta["tool_use"]
-                if "sql" in delta:
-                    result["sql"] = delta["sql"]
-                    
-            # Handle top-level content (non-delta format)
-            elif "content" in data:
-                content = data["content"]
+                return {
+                    "type": "tool_status",
+                    "title": message or status,
+                    "status": status
+                }
+            
+            elif event_type == "response.tool_result":
+                # Tool result - could contain SQL, data, or errors
+                content = data.get("content", [])
+                
+                result = {"type": "tool_result"}
+                
                 if isinstance(content, list):
-                    text_parts = []
-                    for block in content:
-                        if isinstance(block, dict) and "text" in block:
-                            text_parts.append(block["text"])
-                        elif isinstance(block, str):
-                            text_parts.append(block)
-                    result["type"] = "text"
-                    result["content"] = "".join(text_parts)
-                elif isinstance(content, str):
-                    result["type"] = "text"
-                    result["content"] = content
-                    
-            # Handle message types
-            elif "type" in data:
-                result["type"] = data["type"]
-                if data["type"] == "message_start":
-                    result["type"] = "thinking"
-                    result["title"] = "Planning"
-                    result["content"] = "Analyzing your question..."
-                elif data["type"] == "message_stop":
-                    result["type"] = "done"
-                    
-            # Handle text directly in data
-            elif "text" in data:
-                result["type"] = "text"
-                result["content"] = data["text"]
+                    for item in content:
+                        if isinstance(item, dict):
+                            if "json" in item:
+                                json_data = item["json"]
+                                if "sql" in json_data:
+                                    result["sql"] = json_data["sql"]
+                                if "error" in json_data:
+                                    result["error"] = json_data["error"].get("message", str(json_data["error"]))
+                                if "data" in json_data:
+                                    result["data"] = json_data["data"]
+                            if "text" in item:
+                                result["content"] = item["text"]
+                
+                return result if len(result) > 1 else None
             
-            return result
+            elif event_type == "response.chart":
+                # Chart/visualization generated by the agent
+                chart_spec = data.get("chart_spec", {})
+                logger.info(f"Chart event received - chart_spec type: {type(chart_spec)}")
+                
+                # chart_spec may be a JSON string - parse it if so
+                if isinstance(chart_spec, str):
+                    try:
+                        chart_spec = json.loads(chart_spec)
+                        logger.info(f"Parsed chart spec, keys: {list(chart_spec.keys()) if isinstance(chart_spec, dict) else 'not dict'}")
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse chart_spec JSON: {e}")
+                        return None
+                
+                if chart_spec and isinstance(chart_spec, dict):
+                    return {
+                        "type": "chart",
+                        "chart_spec": chart_spec
+                    }
+                return None
+            
+            elif event_type == "response.done":
+                return {"type": "done"}
+            
+            # Handle response.content.delta (alternative output format)
+            elif event_type == "response.content.delta":
+                text = data.get("text", "")
+                if text:
+                    return {"type": "text", "content": text}
+                # Check for nested content
+                content = data.get("content", [])
+                if isinstance(content, list):
+                    texts = [c.get("text", "") for c in content if isinstance(c, dict)]
+                    if texts:
+                        return {"type": "text", "content": "".join(texts)}
+                return None
+            
+            # Log unknown event types for debugging
+            logger.info(f"SSE UNKNOWN: type={event_type}, keys={list(data.keys())}")
+            return None
             
         except Exception as e:
-            logger.warning(f"Failed to parse SSE event: {e}, event_str={event_str[:200]}")
+            logger.warning(f"Failed to parse SSE event: {e}")
             return None
     
     async def run_agent(

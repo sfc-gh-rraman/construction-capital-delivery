@@ -224,7 +224,8 @@ spec:
       public: true
 \$\$
 MIN_INSTANCES = 1
-MAX_INSTANCES = 1"
+MAX_INSTANCES = 1
+EXTERNAL_ACCESS_INTEGRATIONS = (ATLAS_MAP_TILES_ACCESS)"
     fi
     
     log_success "Service deployed!"

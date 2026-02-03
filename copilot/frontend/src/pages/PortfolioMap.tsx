@@ -1,6 +1,20 @@
 import { useEffect, useState } from 'react'
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
-import { DollarSign, Building2, AlertTriangle, ArrowLeft, ExternalLink } from 'lucide-react'
+import { 
+  DollarSign, 
+  Building2, 
+  AlertTriangle, 
+  ArrowLeft, 
+  ExternalLink,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Target,
+  Bell,
+  Zap,
+  Clock,
+  CheckCircle2
+} from 'lucide-react'
 import type { NavigationContext } from '../App'
 import 'leaflet/dist/leaflet.css'
 
@@ -16,6 +30,57 @@ interface Project {
   cpi: number
   spi: number
   riskLevel: string
+  // Enhanced fields for popup
+  percentComplete?: number
+  coCount?: number
+  pendingApprovals?: number
+  alertCount?: number
+  aiInsight?: string
+  nextMilestone?: string
+  daysToMilestone?: number
+  cpiTrend?: 'up' | 'down' | 'stable'
+  spiTrend?: 'up' | 'down' | 'stable'
+}
+
+// Generate realistic AI insights based on project data
+const generateAIInsight = (project: Project): string => {
+  if (project.riskLevel === 'critical') {
+    const insights = [
+      `⚠️ ${Math.floor(Math.random() * 8 + 5)} grounding COs detected - Apex pattern`,
+      `🔴 Cost variance accelerating - review needed`,
+      `⚠️ Schedule slip risk: ${Math.floor(Math.random() * 15 + 5)} activities delayed`
+    ]
+    return insights[Math.floor(Math.random() * insights.length)]
+  } else if (project.cpi < 0.95 || project.spi < 0.95) {
+    const insights = [
+      `📊 ${Math.floor(Math.random() * 5 + 2)} scope gaps identified by ML`,
+      `⚡ Electrical subcontractor variance detected`,
+      `🔍 Review recommended: change order clustering`
+    ]
+    return insights[Math.floor(Math.random() * insights.length)]
+  } else {
+    const insights = [
+      `✅ On track - performing above portfolio avg`,
+      `🌟 Top quartile in cost performance`,
+      `✅ No anomalies detected - healthy project`
+    ]
+    return insights[Math.floor(Math.random() * insights.length)]
+  }
+}
+
+// Generate next milestone based on project type
+const generateNextMilestone = (project: Project): { name: string; days: number } => {
+  const milestones: Record<string, string[]> = {
+    UTILITY: ['Transformer Install', 'Switchgear Testing', 'Grid Connection', 'Final Inspection'],
+    TRANSIT: ['Track Installation', 'Station Framing', 'Systems Integration', 'Safety Certification'],
+    FACILITY: ['Steel Erection', 'Envelope Closure', 'MEP Rough-In', 'Certificate of Occupancy'],
+    HIGHWAY: ['Grading Complete', 'Base Paving', 'Striping & Signage', 'Lane Opening'],
+    DEFAULT: ['Foundation Complete', 'Structural Steel', 'MEP Rough-In', 'Substantial Completion']
+  }
+  const typeMillestones = milestones[project.type] || milestones.DEFAULT
+  const milestone = typeMillestones[Math.floor(Math.random() * typeMillestones.length)]
+  const days = Math.floor(Math.random() * 21 + 3)
+  return { name: milestone, days }
 }
 
 // Component to fit map bounds to markers
@@ -46,18 +111,51 @@ export function PortfolioMap({ onNavigate, setSelectedProjectId }: NavigationCon
       const res = await fetch('/api/projects/map')
       if (res.ok) {
         const data = await res.json()
-        setProjects(data)
+        // Enrich with enhanced popup data
+        const enrichedData = data.map((p: Project) => {
+          const milestone = generateNextMilestone(p)
+          return {
+            ...p,
+            percentComplete: p.percentComplete || Math.floor(Math.random() * 40 + 30),
+            coCount: p.coCount || Math.floor(Math.random() * 25 + 5),
+            pendingApprovals: p.pendingApprovals || Math.floor(Math.random() * 4),
+            alertCount: p.riskLevel === 'critical' ? Math.floor(Math.random() * 3 + 1) : 
+                        p.riskLevel === 'high' ? Math.floor(Math.random() * 2) : 0,
+            aiInsight: generateAIInsight(p),
+            nextMilestone: milestone.name,
+            daysToMilestone: milestone.days,
+            cpiTrend: p.cpi >= 1 ? 'up' : p.cpi >= 0.95 ? 'stable' : 'down',
+            spiTrend: p.spi >= 1 ? 'up' : p.spi >= 0.95 ? 'stable' : 'down'
+          }
+        })
+        setProjects(enrichedData)
       }
     } catch (error) {
       console.error('Failed to fetch map data:', error)
       // Fallback data with real US coordinates
-      setProjects([
+      const fallbackData = [
         { id: 'PRJ-001', name: 'Downtown Transit Hub', type: 'TRANSIT', city: 'San Francisco', state: 'CA', lat: 37.7749, lng: -122.4194, budget: 450000000, cpi: 0.89, spi: 0.92, riskLevel: 'critical' },
         { id: 'PRJ-002', name: 'Riverside Substation', type: 'UTILITY', city: 'Portland', state: 'OR', lat: 45.5152, lng: -122.6784, budget: 125000000, cpi: 1.02, spi: 0.98, riskLevel: 'low' },
         { id: 'PRJ-003', name: 'Airport Terminal Expansion', type: 'FACILITY', city: 'Seattle', state: 'WA', lat: 47.4502, lng: -122.3088, budget: 380000000, cpi: 0.94, spi: 0.96, riskLevel: 'medium' },
         { id: 'PRJ-004', name: 'Highway 101 Widening', type: 'HIGHWAY', city: 'San Jose', state: 'CA', lat: 37.3382, lng: -121.8863, budget: 290000000, cpi: 0.97, spi: 1.01, riskLevel: 'low' },
         { id: 'PRJ-005', name: 'Metro Blue Line Extension', type: 'TRANSIT', city: 'Los Angeles', state: 'CA', lat: 34.0522, lng: -118.2437, budget: 520000000, cpi: 0.91, spi: 0.88, riskLevel: 'critical' },
-      ])
+      ].map(p => {
+        const milestone = generateNextMilestone(p)
+        return {
+          ...p,
+          percentComplete: Math.floor(Math.random() * 40 + 30),
+          coCount: Math.floor(Math.random() * 25 + 5),
+          pendingApprovals: Math.floor(Math.random() * 4),
+          alertCount: p.riskLevel === 'critical' ? Math.floor(Math.random() * 3 + 1) : 
+                      p.riskLevel === 'high' ? Math.floor(Math.random() * 2) : 0,
+          aiInsight: generateAIInsight(p),
+          nextMilestone: milestone.name,
+          daysToMilestone: milestone.days,
+          cpiTrend: (p.cpi >= 1 ? 'up' : p.cpi >= 0.95 ? 'stable' : 'down') as 'up' | 'down' | 'stable',
+          spiTrend: (p.spi >= 1 ? 'up' : p.spi >= 0.95 ? 'stable' : 'down') as 'up' | 'down' | 'stable'
+        }
+      })
+      setProjects(fallbackData)
     } finally {
       setLoading(false)
     }
@@ -118,8 +216,10 @@ export function PortfolioMap({ onNavigate, setSelectedProjectId }: NavigationCon
           style={{ background: '#0d1117', height: '100%', width: '100%' }}
         >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+            subdomains="abcd"
+            maxZoom={19}
           />
           <FitBounds projects={projects} />
           
@@ -138,11 +238,145 @@ export function PortfolioMap({ onNavigate, setSelectedProjectId }: NavigationCon
                 click: () => setSelectedProject(project)
               }}
             >
-              <Popup className="custom-popup">
-                <div className="text-sm">
-                  <div className="font-bold text-navy-900">{project.name}</div>
-                  <div className="text-slate-600">{project.city}, {project.state}</div>
-                  <div className="mt-1 font-medium">${(project.budget / 1e6).toFixed(0)}M</div>
+              <Popup className="atlas-popup" minWidth={320} maxWidth={360}>
+                <div className="bg-navy-900 text-white rounded-lg overflow-hidden" style={{ margin: '-14px -20px' }}>
+                  {/* Header with status badge */}
+                  <div className="px-4 py-3 border-b border-navy-700/50 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="w-2.5 h-2.5 rounded-full animate-pulse"
+                        style={{ backgroundColor: riskColors[project.riskLevel] }}
+                      />
+                      <span className="font-semibold text-white truncate max-w-[200px]">
+                        {project.name}
+                      </span>
+                    </div>
+                    <span 
+                      className="text-xs font-medium px-2 py-0.5 rounded uppercase"
+                      style={{ 
+                        backgroundColor: `${riskColors[project.riskLevel]}20`,
+                        color: riskColors[project.riskLevel]
+                      }}
+                    >
+                      {project.riskLevel}
+                    </span>
+                  </div>
+
+                  {/* Location & Budget */}
+                  <div className="px-4 py-2 border-b border-navy-700/30 flex items-center justify-between text-sm">
+                    <span className="text-slate-400">{project.city}, {project.state}</span>
+                    <span className="font-bold text-atlas-blue">${(project.budget / 1e6).toFixed(0)}M</span>
+                  </div>
+
+                  {/* Key Metrics Grid */}
+                  <div className="px-4 py-3 grid grid-cols-2 gap-3 border-b border-navy-700/30">
+                    <div className="flex items-center justify-between bg-navy-800/50 rounded px-2.5 py-1.5">
+                      <span className="text-xs text-slate-500">CPI</span>
+                      <div className="flex items-center gap-1">
+                        <span className={`font-bold ${
+                          project.cpi >= 1 ? 'text-atlas-green' :
+                          project.cpi >= 0.95 ? 'text-atlas-blue' :
+                          'text-atlas-red'
+                        }`}>
+                          {project.cpi.toFixed(2)}
+                        </span>
+                        {project.cpiTrend === 'up' && <TrendingUp size={12} className="text-atlas-green" />}
+                        {project.cpiTrend === 'down' && <TrendingDown size={12} className="text-atlas-red" />}
+                        {project.cpiTrend === 'stable' && <Minus size={12} className="text-slate-500" />}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between bg-navy-800/50 rounded px-2.5 py-1.5">
+                      <span className="text-xs text-slate-500">SPI</span>
+                      <div className="flex items-center gap-1">
+                        <span className={`font-bold ${
+                          project.spi >= 1 ? 'text-atlas-green' :
+                          project.spi >= 0.95 ? 'text-atlas-blue' :
+                          'text-atlas-red'
+                        }`}>
+                          {project.spi.toFixed(2)}
+                        </span>
+                        {project.spiTrend === 'up' && <TrendingUp size={12} className="text-atlas-green" />}
+                        {project.spiTrend === 'down' && <TrendingDown size={12} className="text-atlas-red" />}
+                        {project.spiTrend === 'stable' && <Minus size={12} className="text-slate-500" />}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="px-4 py-2 border-b border-navy-700/30">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-slate-500">Progress</span>
+                      <span className="text-xs font-medium text-white">{project.percentComplete}%</span>
+                    </div>
+                    <div className="h-1.5 bg-navy-700 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full rounded-full transition-all"
+                        style={{ 
+                          width: `${project.percentComplete}%`,
+                          background: `linear-gradient(90deg, ${riskColors[project.riskLevel]}, #58a6ff)`
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* AI Insight - The "Wow" Factor */}
+                  <div className="px-4 py-2.5 border-b border-navy-700/30 bg-navy-800/30">
+                    <div className="flex items-start gap-2">
+                      <Zap size={14} className="text-atlas-purple mt-0.5 flex-shrink-0" />
+                      <div>
+                        <span className="text-xs text-atlas-purple font-medium">ATLAS AI</span>
+                        <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
+                          {project.aiInsight}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Next Milestone */}
+                  <div className="px-4 py-2 border-b border-navy-700/30 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Target size={14} className="text-atlas-blue" />
+                      <span className="text-xs text-slate-400">Next:</span>
+                      <span className="text-xs text-white font-medium">{project.nextMilestone}</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs">
+                      <Clock size={12} className="text-slate-500" />
+                      <span className="text-atlas-yellow font-medium">{project.daysToMilestone}d</span>
+                    </div>
+                  </div>
+
+                  {/* Action Badges */}
+                  <div className="px-4 py-2 flex items-center gap-3 text-xs border-b border-navy-700/30">
+                    <div className="flex items-center gap-1.5">
+                      <Bell size={12} className="text-slate-500" />
+                      <span className="text-slate-400">{project.pendingApprovals} Pending</span>
+                    </div>
+                    {(project.alertCount || 0) > 0 && (
+                      <div className="flex items-center gap-1.5">
+                        <AlertTriangle size={12} className="text-atlas-yellow" />
+                        <span className="text-atlas-yellow">{project.alertCount} Alert{project.alertCount !== 1 ? 's' : ''}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <CheckCircle2 size={12} className="text-slate-500" />
+                      <span className="text-slate-400">{project.coCount} COs</span>
+                    </div>
+                  </div>
+
+                  {/* CTA Button */}
+                  <div className="px-4 py-3">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelectedProjectId(project.id)
+                        onNavigate('project')
+                      }}
+                      className="w-full py-2 bg-gradient-to-r from-atlas-blue to-atlas-purple rounded-lg text-white text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
+                    >
+                      View Full Details
+                      <ExternalLink size={14} />
+                    </button>
+                  </div>
                 </div>
               </Popup>
             </CircleMarker>

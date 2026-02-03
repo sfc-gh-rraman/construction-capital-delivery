@@ -405,6 +405,58 @@ class SnowflakeServiceSPCS:
         """
         return self.execute_query(sql)
     
+    def search_change_orders(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """
+        Search change orders using semantic LIKE matching.
+        In production, this would use Cortex Search, but for reliability
+        we use SQL LIKE with keyword extraction.
+        """
+        logger.info(f"Searching change orders: {query[:50]}...")
+        
+        # Extract keywords from query
+        keywords = [word.strip().lower() for word in query.split() if len(word.strip()) > 2]
+        
+        if not keywords:
+            return []
+        
+        # Build LIKE conditions for each keyword
+        like_conditions = []
+        for kw in keywords[:5]:  # Limit to 5 keywords
+            like_conditions.append(f"LOWER(co.REASON_TEXT) LIKE '%{kw}%'")
+        
+        # Combine with OR for broader matches
+        where_clause = " OR ".join(like_conditions)
+        
+        sql = f"""
+        SELECT 
+            co.CO_ID,
+            co.PROJECT_ID,
+            p.PROJECT_NAME,
+            co.VENDOR_ID,
+            v.VENDOR_NAME,
+            co.CO_NUMBER,
+            co.CO_TITLE,
+            co.REASON_TEXT,
+            co.APPROVED_AMOUNT,
+            co.ML_CATEGORY,
+            co.APPROVAL_DATE
+        FROM {self.database}.{self.schema}.CHANGE_ORDER co
+        JOIN {self.database}.{self.schema}.PROJECT p ON co.PROJECT_ID = p.PROJECT_ID
+        LEFT JOIN {self.database}.{self.schema}.VENDOR v ON co.VENDOR_ID = v.VENDOR_ID
+        WHERE ({where_clause})
+          AND co.STATUS = 'APPROVED'
+        ORDER BY co.APPROVAL_DATE DESC
+        LIMIT {limit}
+        """
+        
+        try:
+            results = self.execute_query(sql)
+            logger.info(f"Search found {len(results)} results")
+            return results
+        except Exception as e:
+            logger.error(f"Search failed: {e}")
+            return []
+    
     def get_grounding_pattern(self) -> Dict[str, Any]:
         """Get the grounding pattern - THE WOW MOMENT."""
         sql = f"""

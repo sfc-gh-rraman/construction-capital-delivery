@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Sparkles, Database, AlertTriangle, CheckCircle, Loader2, Code, ChevronDown, ChevronUp } from 'lucide-react'
+import { Send, Bot, User, Sparkles, Database, AlertTriangle, CheckCircle, Loader2, Code, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import { VegaChart } from './VegaChart'
 
 interface ThinkingStep {
   id: string
@@ -8,6 +9,14 @@ interface ThinkingStep {
   content: string
   status: 'pending' | 'in_progress' | 'completed'
   sql?: string
+}
+
+interface ChartSpec {
+  $schema?: string
+  data?: unknown
+  mark?: unknown
+  encoding?: unknown
+  [key: string]: unknown
 }
 
 interface Message {
@@ -21,6 +30,7 @@ interface Message {
   timestamp: Date
   thinkingSteps?: ThinkingStep[]
   isStreaming?: boolean
+  chartSpec?: ChartSpec
 }
 
 interface ChatProps {
@@ -139,17 +149,49 @@ Try asking: *"What hidden patterns exist in our change orders?"*`,
           try {
             const event = JSON.parse(dataStr)
             
-            if (event.type === 'thinking') {
+            // Handle different event types from Cortex Agent
+            if (event.type === 'text') {
+              // ACTUAL OUTPUT TEXT - this is what we show to the user
+              fullContent += event.content || ''
+              setMessages(prev => prev.map(msg => 
+                msg.id === assistantId 
+                  ? { ...msg, content: fullContent }
+                  : msg
+              ))
+            } else if (event.type === 'thinking') {
+              // Agent's internal reasoning - accumulate but don't show as main content
+              const thinkingText = event.content || ''
+              // Only add substantial thinking steps
+              if (thinkingText.length > 20) {
+                const step: ThinkingStep = {
+                  id: `step-${Date.now()}`,
+                  title: event.title || 'Reasoning',
+                  content: thinkingText.slice(0, 200) + (thinkingText.length > 200 ? '...' : ''),
+                  status: 'in_progress',
+                  sql: event.sql
+                }
+                // Limit to last 5 thinking steps to avoid clutter
+                if (thinkingSteps.length >= 5) {
+                  thinkingSteps.shift()
+                }
+                thinkingSteps.push(step)
+                thinkingSteps.slice(0, -1).forEach(s => s.status = 'completed')
+                
+                setMessages(prev => prev.map(msg => 
+                  msg.id === assistantId 
+                    ? { ...msg, thinkingSteps: [...thinkingSteps] }
+                    : msg
+                ))
+              }
+            } else if (event.type === 'status' || event.type === 'tool_status') {
+              // Status updates - add as thinking steps
               const step: ThinkingStep = {
-                id: `step-${thinkingSteps.length}`,
-                title: event.title || 'Processing',
-                content: event.content || '',
-                status: 'in_progress',
-                sql: event.sql
+                id: `status-${Date.now()}`,
+                title: event.title || event.status || 'Processing',
+                content: '',
+                status: 'in_progress'
               }
               thinkingSteps.push(step)
-              
-              // Update previous steps to completed
               thinkingSteps.slice(0, -1).forEach(s => s.status = 'completed')
               
               setMessages(prev => prev.map(msg => 
@@ -157,32 +199,44 @@ Try asking: *"What hidden patterns exist in our change orders?"*`,
                   ? { ...msg, thinkingSteps: [...thinkingSteps] }
                   : msg
               ))
-            } else if (event.type === 'text' || event.content) {
-              fullContent += event.content || event.text || ''
+            } else if (event.type === 'tool_result') {
+              // Tool execution result - may contain SQL and data
+              if (event.sql) {
+                const sqlStep: ThinkingStep = {
+                  id: `sql-${Date.now()}`,
+                  title: 'SQL Executed',
+                  content: event.error || 'Query completed',
+                  status: event.error ? 'pending' : 'completed',
+                  sql: event.sql
+                }
+                thinkingSteps.push(sqlStep)
+                setMessages(prev => prev.map(msg => 
+                  msg.id === assistantId 
+                    ? { ...msg, thinkingSteps: [...thinkingSteps] }
+                    : msg
+                ))
+              }
+            } else if (event.type === 'sources') {
+              sources = event.sources || []
+            } else if (event.type === 'chart') {
+              // Chart/visualization from the agent
+              const chartSpec = event.chart_spec
+              if (chartSpec) {
+                setMessages(prev => prev.map(msg => 
+                  msg.id === assistantId 
+                    ? { ...msg, chartSpec }
+                    : msg
+                ))
+              }
+            } else if (event.type === 'error') {
+              fullContent += `\n\n⚠️ ${event.content || 'An error occurred'}`
               setMessages(prev => prev.map(msg => 
                 msg.id === assistantId 
                   ? { ...msg, content: fullContent }
                   : msg
               ))
-            } else if (event.type === 'tool_use' && event.sql) {
-              // Add SQL execution step
-              const sqlStep: ThinkingStep = {
-                id: `step-sql-${thinkingSteps.length}`,
-                title: 'Executing SQL',
-                content: 'Running query against Snowflake...',
-                status: 'in_progress',
-                sql: event.sql
-              }
-              thinkingSteps.push(sqlStep)
-              setMessages(prev => prev.map(msg => 
-                msg.id === assistantId 
-                  ? { ...msg, thinkingSteps: [...thinkingSteps] }
-                  : msg
-              ))
-            } else if (event.type === 'sources') {
-              sources = event.sources || []
-            } else if (event.type === 'error') {
-              fullContent = event.content || 'An error occurred'
+            } else if (event.type === 'done') {
+              // Stream complete
             }
           } catch {
             // Skip invalid JSON
@@ -360,6 +414,17 @@ Try asking: *"What hidden patterns exist in our change orders?"*`,
                       </div>
                     ) : (
                       <ReactMarkdown>{message.content}</ReactMarkdown>
+                    )}
+                    
+                    {/* Chart visualization */}
+                    {message.chartSpec && (
+                      <div className="mt-4">
+                        <div className="flex items-center gap-2 mb-2 text-xs text-atlas-blue">
+                          <BarChart3 size={14} />
+                          <span>Generated Visualization</span>
+                        </div>
+                        <VegaChart spec={message.chartSpec} className="w-full" />
+                      </div>
                     )}
                   </div>
                 ) : (
