@@ -178,7 +178,7 @@ cd copilot/deploy
 
 ## 📚 Documentation
 
-- [Design Requirements Document](./DRD.md)
+- [Solution Overview](./solution_presentation/Capital_Delivery_Overview.md)
 - [Deployment Guide](./copilot/deploy/DEPLOYMENT_GUIDE.md)
 
 ---
